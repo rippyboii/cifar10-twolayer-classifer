@@ -157,3 +157,14 @@ def BackwardPass(X, Y, fp_data, network, lam):
     }
 
     return grads
+
+def ComputeLoss(P, y):
+    n = P.shape[1]
+    p_correct = P[y, np.arange(n)]
+    L = -np.mean(np.log(p_correct))
+    return L
+
+def ComputeCost(P, y, network, lam):
+    loss = ComputeLoss(P, y)
+    reg = lam * (np.sum(network['W'][0]**2) + np.sum(network['W'][1]**2))
+    return loss + reg
