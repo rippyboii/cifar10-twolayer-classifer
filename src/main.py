@@ -168,3 +168,6 @@ def ComputeCost(P, y, network, lam):
     loss = ComputeLoss(P, y)
     reg = lam * (np.sum(network['W'][0]**2) + np.sum(network['W'][1]**2))
     return loss + reg
+
+
+

@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 
 def ComputeGradsWithTorch(X, y, network_params):
     
@@ -21,6 +22,10 @@ def ComputeGradsWithTorch(X, y, network_params):
     
     # Apply the scoring function corresponding to equations (1-3) in assignment description 
     # If X is d x n then the final scores torch array should have size 10 x n 
+
+    s1     = torch.matmul(W[0], Xt) + b[0]
+    h      = apply_relu(s1) 
+    scores = torch.matmul(W[1], h)  + b[1] 
 
     #### END of your code ###########################            
 
