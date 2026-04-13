@@ -95,3 +95,29 @@ def InitNetwork(d, m, K, seed=42):
     network['b'][1] = np.zeros((K, 1))
     
     return network
+
+def ApplyNetwork(X, network):
+    """
+    X: (d, n)
+    Returns fp_data dict with all intermediate values
+    """
+    W1, b1 = network['W'][0], network['b'][0]
+    W2, b2 = network['W'][1], network['b'][1]
+    
+    # Layer 1
+    s1 = W1 @ X + b1          # (m, n)
+    h  = np.maximum(0, s1)    # ReLU  (m, n)
+    
+    # Layer 2
+    s  = W2 @ h + b2          # (K, n)
+    P  = softmax(s)            # (K, n)
+    
+    # store everything — backward pass will need s1 and h
+    fp_data = {
+        's1': s1,
+        'h':  h,
+        's':  s,
+        'P':  P
+    }
+    
+    return fp_data
