@@ -121,3 +121,39 @@ def ApplyNetwork(X, network):
     }
     
     return fp_data
+
+def BackwardPass(X, Y, fp_data, network, lam):
+    """
+    X       : (d, n)   input images
+    Y       : (K, n)   one-hot true labels
+    fp_data : dict     from ApplyNetwork (has P, h, s1)
+    network : dict     current parameters
+    lam     : float    regularization strength
+    """
+    n  = X.shape[1]
+    P  = fp_data['P']
+    h  = fp_data['h']
+    s1 = fp_data['s1']
+    W2 = network['W'][1]
+    W1 = network['W'][0]
+
+    # error at the ouitput layer
+    G = P - Y                                        # (K, n)
+
+    # gradients for 2nd layer
+    grad_W2 = (G @ h.T) / n + 2 * lam * W2          # (K, m)
+    grad_b2 = np.sum(G, axis=1, keepdims=True) / n  # (K, 1)
+
+    G = W2.T @ G                                     # (m, n)
+    G = G * (s1 > 0)                                 # ReLU gate (m, n)
+
+    # gradients for 1st layer
+    grad_W1 = (G @ X.T) / n + 2 * lam * W1          # (m, d)
+    grad_b1 = np.sum(G, axis=1, keepdims=True) / n  # (m, 1)
+
+    grads = {
+        'W': [grad_W1, grad_W2],
+        'b': [grad_b1, grad_b2]
+    }
+
+    return grads
