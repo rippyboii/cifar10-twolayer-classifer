@@ -1,0 +1,15 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Datasets (too large for git)
+Datasets/
+
+# Figures (generated files)
+figures/
+
+# OS files
+.DS_Store
+
+# VS Code
+.vscode/
