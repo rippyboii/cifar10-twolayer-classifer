@@ -72,3 +72,26 @@ def MaxAbsoluteError(a, b):
 
 def MaxRelativeError(a, b, eps=1e-10):
     return np.max(np.abs(a - b) / np.maximum(eps, np.abs(a) + np.abs(b)))
+
+
+def InitNetwork(d, m, K, seed=42):
+    """
+    d = input dimension (3072 for CIFAR-10)
+    m = hidden layer size (50 by default)
+    K = number of classes (10)
+    """
+    rng = np.random.default_rng(seed)
+    
+    network = {}
+    network['W'] = [None] * 2
+    network['b'] = [None] * 2
+    
+    # Layer 1: (m x d), std = 1/sqrt(d)
+    network['W'][0] = rng.standard_normal((m, d)) / np.sqrt(d)
+    network['b'][0] = np.zeros((m, 1))
+    
+    # Layer 2: (K x m), std = 1/sqrt(m)
+    network['W'][1] = rng.standard_normal((K, m)) / np.sqrt(m)
+    network['b'][1] = np.zeros((K, 1))
+    
+    return network
