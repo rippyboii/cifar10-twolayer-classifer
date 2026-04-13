@@ -171,3 +171,38 @@ def ComputeCost(P, y, network, lam):
 
 
 
+if __name__ == "__main__":
+    ROOT = Path(__file__).resolve().parent.parent
+    data_dir = ROOT / "Datasets" / "cifar-10-python" / "cifar-10-batches-py"
+
+    # load data
+    trainX, trainY, trainy = LoadBatch(data_dir / "data_batch_1")
+    mean_X = np.mean(trainX, axis=1, keepdims=True)
+    std_X  = np.std(trainX,  axis=1, keepdims=True)
+    trainX = NormalizeData(trainX, mean_X, std_X)
+
+    # small network and small data for the check
+    rng     = np.random.default_rng(42)
+    d_small = 5
+    n_small = 3
+    m       = 6
+    K       = 10
+
+    small_net = InitNetwork(d_small, m, K, seed=42)
+
+    X_small = trainX[0:d_small, 0:n_small]
+    Y_small = trainY[:, 0:n_small]
+    y_small = trainy[0:n_small]
+
+    # compare gradients lam=0
+    from torch_gradient_computations import ComputeGradsWithTorch
+    fp      = ApplyNetwork(X_small, small_net)
+    my_grads    = BackwardPass(X_small, Y_small, fp, small_net, lam=0.0)
+    torch_grads = ComputeGradsWithTorch(X_small, y_small, small_net)
+
+    print("-- Gradient check (lam=0) --")
+    for i in range(2):
+        print(f"  Layer {i+1} W: abs={MaxAbsoluteError(my_grads['W'][i], torch_grads['W'][i]):.2e} "
+              f"rel={MaxRelativeError(my_grads['W'][i], torch_grads['W'][i]):.2e}")
+        print(f"  Layer {i+1} b: abs={MaxAbsoluteError(my_grads['b'][i], torch_grads['b'][i]):.2e} "
+              f"rel={MaxRelativeError(my_grads['b'][i], torch_grads['b'][i]):.2e}")
