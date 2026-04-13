@@ -169,6 +169,58 @@ def ComputeCost(P, y, network, lam):
     reg = lam * (np.sum(network['W'][0]**2) + np.sum(network['W'][1]**2))
     return loss + reg
 
+def MiniBatchGD(X, Y, y, X_val, Y_val, y_val, GDparams, network, lam):
+    n       = X.shape[1]
+    n_batch = GDparams['n_batch']
+    eta     = GDparams['eta']
+    n_epochs = GDparams['n_epochs']
+
+    history = {
+        "train_loss": [], "val_loss": [],
+        "train_cost": [], "val_cost": [],
+        "train_acc":  [], "val_acc":  []
+    }
+
+    for epoch in range(n_epochs):
+        # shuffle indices each epoch
+        idx = np.random.permutation(n)
+        X, Y, y = X[:, idx], Y[:, idx], y[idx]
+
+        for j in range(0, n, n_batch):
+            X_batch = X[:, j:j+n_batch]
+            Y_batch = Y[:, j:j+n_batch]
+
+            fp      = ApplyNetwork(X_batch, network)
+            grads   = BackwardPass(X_batch, Y_batch, fp, network, lam)
+
+            # update parameters
+            for i in range(2):
+                network['W'][i] -= eta * grads['W'][i]
+                network['b'][i] -= eta * grads['b'][i]
+
+        # record metrics once per epoch
+        fp_train = ApplyNetwork(X, network)
+        fp_val   = ApplyNetwork(X_val, network)
+
+        train_loss = ComputeLoss(fp_train['P'], y)
+        val_loss   = ComputeLoss(fp_val['P'],   y_val)
+        train_cost = ComputeCost(fp_train['P'], y,    network, lam)
+        val_cost   = ComputeCost(fp_val['P'],   y_val, network, lam)
+        train_acc  = ComputeAccuracy(fp_train['P'], y)
+        val_acc    = ComputeAccuracy(fp_val['P'],   y_val)
+
+        history['train_loss'].append(train_loss)
+        history['val_loss'].append(val_loss)
+        history['train_cost'].append(train_cost)
+        history['val_cost'].append(val_cost)
+        history['train_acc'].append(train_acc)
+        history['val_acc'].append(val_acc)
+
+        print(f"Epoch {epoch+1}/{n_epochs} | "
+              f"train loss: {train_loss:.4f} | val loss: {val_loss:.4f} | "
+              f"train acc: {train_acc:.4f} | val acc: {val_acc:.4f}")
+
+    return network, history
 
 
 if __name__ == "__main__":
@@ -206,3 +258,17 @@ if __name__ == "__main__":
               f"rel={MaxRelativeError(my_grads['W'][i], torch_grads['W'][i]):.2e}")
         print(f"  Layer {i+1} b: abs={MaxAbsoluteError(my_grads['b'][i], torch_grads['b'][i]):.2e} "
               f"rel={MaxRelativeError(my_grads['b'][i], torch_grads['b'][i]):.2e}")
+    
+    print("\n-- Overfit sanity check (100 examples, lam=0) --")
+    X_overfit = trainX[:, 0:100]
+    Y_overfit = trainY[:, 0:100]
+    y_overfit = trainy[0:100]
+
+    overfit_net    = InitNetwork(d=trainX.shape[0], m=50, K=10, seed=42)
+    overfit_params = {'n_batch': 10, 'eta': 0.01, 'n_epochs': 200}
+
+    overfit_net, _ = MiniBatchGD(
+        X_overfit, Y_overfit, y_overfit,
+        X_overfit, Y_overfit, y_overfit,   # use same data for val
+        overfit_params, overfit_net, lam=0.0
+    )
