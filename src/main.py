@@ -5,6 +5,9 @@ import matplotlib.pyplot as plt
 import torch
 from pathlib import Path
 
+# this will be used later to skip coarse lamda search
+SKIP = True # It's already run in prev tests
+
 
 def LoadBatch(filename):
     with open(filename, 'rb') as fo:
@@ -323,7 +326,7 @@ if __name__ == "__main__":
     PlotHistory(hist_ex4, title="Exercise 4: 3 cycles",
                 save_path=figures_dir / "ex4_three_cycles.png")
     
-    # --- Coarse lamda search ---
+    # --- Coarse lamda search ---   
     print("\n-- Coarse lambda search --")
 
     # load all 5 batches
@@ -353,36 +356,76 @@ if __name__ == "__main__":
     d    = big_trainX.shape[0]
     n    = big_trainX.shape[1]
 
-    # 8 values evenly on log scale from 1e-5 to 1e-1
-    l_min, l_max = -5, -1
-    lam_values = [10 ** (l_min + (l_max - l_min) * i / 7) for i in range(8)]
+    if not SKIP:
 
-    n_batch = 100
-    n_s_coarse = int(2 * np.floor(n / n_batch))  # as per PDF formula
+        # 8 values evenly on log scale from 1e-5 to 1e-1
+        l_min, l_max = -5, -1
+        lam_values = [10 ** (l_min + (l_max - l_min) * i / 7) for i in range(8)]
 
-    coarse_params = {
-        'n_batch':  n_batch,
+        n_batch = 100
+        n_s_coarse = int(2 * np.floor(n / n_batch))  # as per PDF formula
+
+        coarse_params = {
+            'n_batch':  n_batch,
+            'eta_min':  1e-5,
+            'eta_max':  1e-1,
+            'n_s':      n_s_coarse,
+            'n_cycles': 2
+        }
+
+        coarse_results = []
+
+        for lam in lam_values:
+            print(f"\n  lam={lam:.2e}")
+            net = InitNetwork(d=d, m=50, K=10, seed=42)
+            net, hist = MiniBatchGD(
+                big_trainX, big_trainY, big_trainy,
+                big_valX,   big_valY,   big_valy,
+                coarse_params, net, lam
+            )
+            best_val_acc = max(hist['val_acc'])
+            final_val_acc = hist['val_acc'][-1]
+            print(f"  lam={lam:.2e} | best val acc: {best_val_acc*100:.2f}% | final val acc: {final_val_acc*100:.2f}%")
+            coarse_results.append((lam, best_val_acc, final_val_acc))
+
+        print("\n-- Coarse search summary --")
+        for lam, best, final in coarse_results:
+            print(f"  lam={lam:.2e} | best={best*100:.2f}% | final={final*100:.2f}%")
+
+    # --- Fine lambda search ---
+    print("\n-- Fine lambda search --")
+
+    # zoom into the good region found in coarse search
+    fine_lam_values = [10 ** (-3.3 + (-2.15 - (-3.3)) * i / 7) for i in range(8)]
+
+    fine_params = {
+        'n_batch':  100,
         'eta_min':  1e-5,
         'eta_max':  1e-1,
-        'n_s':      n_s_coarse,
+        'n_s':      500,
         'n_cycles': 2
     }
 
-    coarse_results = []
+    fine_results = []
 
-    for lam in lam_values:
+    for lam in fine_lam_values:
         print(f"\n  lam={lam:.2e}")
         net = InitNetwork(d=d, m=50, K=10, seed=42)
         net, hist = MiniBatchGD(
             big_trainX, big_trainY, big_trainy,
             big_valX,   big_valY,   big_valy,
-            coarse_params, net, lam
+            fine_params, net, lam
         )
-        best_val_acc = max(hist['val_acc'])
+        best_val_acc  = max(hist['val_acc'])
         final_val_acc = hist['val_acc'][-1]
-        print(f"  lam={lam:.2e} | best val acc: {best_val_acc*100:.2f}% | final val acc: {final_val_acc*100:.2f}%")
-        coarse_results.append((lam, best_val_acc, final_val_acc))
+        print(f"  lam={lam:.2e} | best val acc: {best_val_acc*100:.2f}% | final: {final_val_acc*100:.2f}%")
+        fine_results.append((lam, best_val_acc, final_val_acc))
 
-    print("\n-- Coarse search summary --")
-    for lam, best, final in coarse_results:
+    print("\n-- Fine search summary --")
+    for lam, best, final in fine_results:
         print(f"  lam={lam:.2e} | best={best*100:.2f}% | final={final*100:.2f}%")
+
+    best_lam = max(fine_results, key=lambda x: x[1])[0]
+    print(f"\n  Best lam from fine search: {best_lam:.2e}")
+
+    
