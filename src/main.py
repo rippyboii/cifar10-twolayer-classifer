@@ -296,3 +296,29 @@ if __name__ == "__main__":
     )
     PlotHistory(hist_ex3, title="Exercise 3: 1 cycle",
                 save_path=figures_dir / "ex3_one_cycle.png")
+    
+    # --- Exercise 4: 3 cycles, replicate Figure 4 ---
+    print("\n-- Exercise 4: 3 cycles (replicating Figure 4) --")
+    net_ex4    = InitNetwork(d=trainX.shape[0], m=50, K=10, seed=42)
+    params_ex4 = {
+        'n_batch':  100,
+        'eta_min':  1e-5,
+        'eta_max':  1e-1,
+        'n_s':      800,
+        'n_cycles': 3
+    }
+    net_ex4, hist_ex4 = MiniBatchGD(
+        trainX, trainY, trainy,
+        valX,   valY,   valy,
+        params_ex4, net_ex4, lam=0.01
+    )
+
+    # evaluate on test set
+    testX, testY, testy = LoadBatch(data_dir / "test_batch")
+    testX = NormalizeData(testX, mean_X, std_X)
+    fp_test  = ApplyNetwork(testX, net_ex4)
+    test_acc = ComputeAccuracy(fp_test['P'], testy)
+    print(f"  Test accuracy after 3 cycles: {test_acc*100:.2f}%")
+
+    PlotHistory(hist_ex4, title="Exercise 4: 3 cycles",
+                save_path=figures_dir / "ex4_three_cycles.png")
