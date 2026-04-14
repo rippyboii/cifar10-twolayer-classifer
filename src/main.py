@@ -36,34 +36,37 @@ def ComputeAccuracy(P, y):
     return acc
 
 def PlotHistory(history, title="", save_path=None):
-    epochs = range(1, len(history["train_loss"]) + 1)
+    steps = history["steps"]
 
-    plt.figure(figsize=(12, 5))
+    fig, axs = plt.subplots(1, 3, figsize=(15, 4))
 
-    # Loss
-    plt.subplot(1, 2, 1)
-    plt.plot(epochs, history["train_loss"], label="train loss")
-    plt.plot(epochs, history["val_loss"], label="val loss")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.title("Loss")
-    plt.legend()
+    axs[0].plot(steps, history["train_cost"], label="train")
+    axs[0].plot(steps, history["val_cost"],   label="val")
+    axs[0].set_xlabel("Update step")
+    axs[0].set_ylabel("Cost")
+    axs[0].set_title("Cost")
+    axs[0].legend()
 
-    # Cost
-    plt.subplot(1, 2, 2)
-    plt.plot(epochs, history["train_cost"], label="train cost")
-    plt.plot(epochs, history["val_cost"], label="val cost")
-    plt.xlabel("Epoch")
-    plt.ylabel("Cost")
-    plt.title("Cost")
-    plt.legend()
+    axs[1].plot(steps, history["train_loss"], label="train")
+    axs[1].plot(steps, history["val_loss"],   label="val")
+    axs[1].set_xlabel("Update step")
+    axs[1].set_ylabel("Loss")
+    axs[1].set_title("Loss")
+    axs[1].legend()
+
+    axs[2].plot(steps, history["train_acc"], label="train")
+    axs[2].plot(steps, history["val_acc"],   label="val")
+    axs[2].set_xlabel("Update step")
+    axs[2].set_ylabel("Accuracy")
+    axs[2].set_title("Accuracy")
+    axs[2].legend()
 
     plt.suptitle(title)
     plt.tight_layout()
 
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
-        print(f"Saved plot: {save_path}")
+        print(f"Saved: {save_path}")
     plt.close()
 
 def MaxAbsoluteError(a, b):
@@ -172,53 +175,77 @@ def ComputeCost(P, y, network, lam):
 def MiniBatchGD(X, Y, y, X_val, Y_val, y_val, GDparams, network, lam):
     n       = X.shape[1]
     n_batch = GDparams['n_batch']
-    eta     = GDparams['eta']
-    n_epochs = GDparams['n_epochs']
+    eta_min = GDparams['eta_min']
+    eta_max = GDparams['eta_max']
+    n_s     = GDparams['n_s']
+    n_cycles = GDparams['n_cycles']
+
+    total_steps = 2 * n_s * n_cycles   # total update steps
+    log_every   = total_steps // 10    # log 10 times per cycle... 
+    # actually log n_cycles * 10 times total
+    log_every   = 2 * n_s // 10       # log 10 times per cycle
 
     history = {
         "train_loss": [], "val_loss": [],
         "train_cost": [], "val_cost": [],
-        "train_acc":  [], "val_acc":  []
+        "train_acc":  [], "val_acc":  [],
+        "steps":      []
     }
 
-    for epoch in range(n_epochs):
-        # shuffle indices each epoch
+    t = 0  # global update step counter
+
+    while t < total_steps:
+        # shuffle at the start of each pass through data
         idx = np.random.permutation(n)
-        X, Y, y = X[:, idx], Y[:, idx], y[idx]
+        X_shuf = X[:, idx]
+        Y_shuf = Y[:, idx]
+        y_shuf = y[idx]
 
         for j in range(0, n, n_batch):
-            X_batch = X[:, j:j+n_batch]
-            Y_batch = Y[:, j:j+n_batch]
+            if t >= total_steps:
+                break
 
-            fp      = ApplyNetwork(X_batch, network)
-            grads   = BackwardPass(X_batch, Y_batch, fp, network, lam)
+            X_batch = X_shuf[:, j:j+n_batch]
+            Y_batch = Y_shuf[:, j:j+n_batch]
+
+            # get current learning rate
+            eta = CyclicLearningRate(t, eta_min, eta_max, n_s)
+
+            # forward + backward
+            fp    = ApplyNetwork(X_batch, network)
+            grads = BackwardPass(X_batch, Y_batch, fp, network, lam)
 
             # update parameters
             for i in range(2):
                 network['W'][i] -= eta * grads['W'][i]
                 network['b'][i] -= eta * grads['b'][i]
 
-        # record metrics once per epoch
-        fp_train = ApplyNetwork(X, network)
-        fp_val   = ApplyNetwork(X_val, network)
+            # log periodically
+            if t % log_every == 0:
+                fp_train = ApplyNetwork(X, network)
+                fp_val   = ApplyNetwork(X_val, network)
 
-        train_loss = ComputeLoss(fp_train['P'], y)
-        val_loss   = ComputeLoss(fp_val['P'],   y_val)
-        train_cost = ComputeCost(fp_train['P'], y,    network, lam)
-        val_cost   = ComputeCost(fp_val['P'],   y_val, network, lam)
-        train_acc  = ComputeAccuracy(fp_train['P'], y)
-        val_acc    = ComputeAccuracy(fp_val['P'],   y_val)
+                train_loss = ComputeLoss(fp_train['P'], y)
+                val_loss   = ComputeLoss(fp_val['P'],   y_val)
+                train_cost = ComputeCost(fp_train['P'], y,     network, lam)
+                val_cost   = ComputeCost(fp_val['P'],   y_val, network, lam)
+                train_acc  = ComputeAccuracy(fp_train['P'], y)
+                val_acc    = ComputeAccuracy(fp_val['P'],   y_val)
 
-        history['train_loss'].append(train_loss)
-        history['val_loss'].append(val_loss)
-        history['train_cost'].append(train_cost)
-        history['val_cost'].append(val_cost)
-        history['train_acc'].append(train_acc)
-        history['val_acc'].append(val_acc)
+                history['train_loss'].append(train_loss)
+                history['val_loss'].append(val_loss)
+                history['train_cost'].append(train_cost)
+                history['val_cost'].append(val_cost)
+                history['train_acc'].append(train_acc)
+                history['val_acc'].append(val_acc)
+                history['steps'].append(t)
 
-        print(f"Epoch {epoch+1}/{n_epochs} | "
-              f"train loss: {train_loss:.4f} | val loss: {val_loss:.4f} | "
-              f"train acc: {train_acc:.4f} | val acc: {val_acc:.4f}")
+                print(f"  step {t}/{total_steps} | "
+                      f"loss: {train_loss:.4f}/{val_loss:.4f} | "
+                      f"acc: {train_acc:.4f}/{val_acc:.4f} | "
+                      f"eta: {eta:.6f}")
+
+            t += 1
 
     return network, history
 
