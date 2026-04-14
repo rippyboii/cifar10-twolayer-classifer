@@ -322,3 +322,67 @@ if __name__ == "__main__":
 
     PlotHistory(hist_ex4, title="Exercise 4: 3 cycles",
                 save_path=figures_dir / "ex4_three_cycles.png")
+    
+    # --- Coarse lamda search ---
+    print("\n-- Coarse lambda search --")
+
+    # load all 5 batches
+    all_X, all_Y, all_y = [], [], []
+    for i in range(1, 6):
+        Xi, Yi, yi = LoadBatch(data_dir / f"data_batch_{i}")
+        all_X.append(Xi)
+        all_Y.append(Yi)
+        all_y.append(yi)
+    all_X = np.concatenate(all_X, axis=1)  # (3072, 50000)
+    all_Y = np.concatenate(all_Y, axis=1)  # (10, 50000)
+    all_y = np.concatenate(all_y, axis=0)  # (50000,)
+
+    # normalize using training set stats
+    mean_all = np.mean(all_X, axis=1, keepdims=True)
+    std_all  = np.std(all_X,  axis=1, keepdims=True)
+    all_X    = NormalizeData(all_X, mean_all, std_all)
+
+    # split: last 5000 = val, rest = train
+    big_trainX = all_X[:, :-5000]
+    big_trainY = all_Y[:, :-5000]
+    big_trainy = all_y[:-5000]
+    big_valX   = all_X[:, -5000:]
+    big_valY   = all_Y[:, -5000:]
+    big_valy   = all_y[-5000:]
+
+    d    = big_trainX.shape[0]
+    n    = big_trainX.shape[1]
+
+    # 8 values evenly on log scale from 1e-5 to 1e-1
+    l_min, l_max = -5, -1
+    lam_values = [10 ** (l_min + (l_max - l_min) * i / 7) for i in range(8)]
+
+    n_batch = 100
+    n_s_coarse = int(2 * np.floor(n / n_batch))  # as per PDF formula
+
+    coarse_params = {
+        'n_batch':  n_batch,
+        'eta_min':  1e-5,
+        'eta_max':  1e-1,
+        'n_s':      n_s_coarse,
+        'n_cycles': 2
+    }
+
+    coarse_results = []
+
+    for lam in lam_values:
+        print(f"\n  lam={lam:.2e}")
+        net = InitNetwork(d=d, m=50, K=10, seed=42)
+        net, hist = MiniBatchGD(
+            big_trainX, big_trainY, big_trainy,
+            big_valX,   big_valY,   big_valy,
+            coarse_params, net, lam
+        )
+        best_val_acc = max(hist['val_acc'])
+        final_val_acc = hist['val_acc'][-1]
+        print(f"  lam={lam:.2e} | best val acc: {best_val_acc*100:.2f}% | final val acc: {final_val_acc*100:.2f}%")
+        coarse_results.append((lam, best_val_acc, final_val_acc))
+
+    print("\n-- Coarse search summary --")
+    for lam, best, final in coarse_results:
+        print(f"  lam={lam:.2e} | best={best*100:.2f}% | final={final*100:.2f}%")
