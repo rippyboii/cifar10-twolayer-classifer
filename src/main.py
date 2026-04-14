@@ -10,10 +10,10 @@ def LoadBatch(filename):
     with open(filename, 'rb') as fo:
         batch = pickle.load(fo, encoding='bytes')
 
-    X = batch[b'data'].astype(np.float64) / 255.0   # (10000, 3072)
-    X = X.T                                         # (3072, 10000)
+    X = batch[b'data'].astype(np.float64) / 255.0
+    X = X.T
 
-    y = np.array(batch[b'labels'])                  # (10000,)
+    y = np.array(batch[b'labels'])
     K = 10
     n = X.shape[1]
 
@@ -72,67 +72,39 @@ def PlotHistory(history, title="", save_path=None):
 def MaxAbsoluteError(a, b):
     return np.max(np.abs(a - b))
 
-
 def MaxRelativeError(a, b, eps=1e-10):
     return np.max(np.abs(a - b) / np.maximum(eps, np.abs(a) + np.abs(b)))
 
-
 def InitNetwork(d, m, K, seed=42):
-    """
-    d = input dimension (3072 for CIFAR-10)
-    m = hidden layer size (50 by default)
-    K = number of classes (10)
-    """
     rng = np.random.default_rng(seed)
-    
+
     network = {}
     network['W'] = [None] * 2
     network['b'] = [None] * 2
-    
+
     # Layer 1: (m x d), std = 1/sqrt(d)
     network['W'][0] = rng.standard_normal((m, d)) / np.sqrt(d)
     network['b'][0] = np.zeros((m, 1))
-    
+
     # Layer 2: (K x m), std = 1/sqrt(m)
     network['W'][1] = rng.standard_normal((K, m)) / np.sqrt(m)
     network['b'][1] = np.zeros((K, 1))
-    
+
     return network
 
 def ApplyNetwork(X, network):
-    """
-    X: (d, n)
-    Returns fp_data dict with all intermediate values
-    """
     W1, b1 = network['W'][0], network['b'][0]
     W2, b2 = network['W'][1], network['b'][1]
-    
-    # Layer 1
+
     s1 = W1 @ X + b1          # (m, n)
-    h  = np.maximum(0, s1)    # ReLU  (m, n)
-    
-    # Layer 2
+    h  = np.maximum(0, s1)    # ReLU
     s  = W2 @ h + b2          # (K, n)
     P  = softmax(s)            # (K, n)
-    
-    # store everything — backward pass will need s1 and h
-    fp_data = {
-        's1': s1,
-        'h':  h,
-        's':  s,
-        'P':  P
-    }
-    
+
+    fp_data = {'s1': s1, 'h': h, 's': s, 'P': P}
     return fp_data
 
 def BackwardPass(X, Y, fp_data, network, lam):
-    """
-    X       : (d, n)   input images
-    Y       : (K, n)   one-hot true labels
-    fp_data : dict     from ApplyNetwork (has P, h, s1)
-    network : dict     current parameters
-    lam     : float    regularization strength
-    """
     n  = X.shape[1]
     P  = fp_data['P']
     h  = fp_data['h']
@@ -140,25 +112,25 @@ def BackwardPass(X, Y, fp_data, network, lam):
     W2 = network['W'][1]
     W1 = network['W'][0]
 
-    # error at the ouitput layer
+    # error at output layer
     G = P - Y                                        # (K, n)
 
-    # gradients for 2nd layer
-    grad_W2 = (G @ h.T) / n + 2 * lam * W2          # (K, m)
-    grad_b2 = np.sum(G, axis=1, keepdims=True) / n  # (K, 1)
+    # gradients for layer 2
+    grad_W2 = (G @ h.T) / n + 2 * lam * W2
+    grad_b2 = np.sum(G, axis=1, keepdims=True) / n
 
-    G = W2.T @ G                                     # (m, n)
-    G = G * (s1 > 0)                                 # ReLU gate (m, n)
+    # propagate back through W2 and ReLU
+    G = W2.T @ G
+    G = G * (s1 > 0)                                 # ReLU gate
 
-    # gradients for 1st layer
-    grad_W1 = (G @ X.T) / n + 2 * lam * W1          # (m, d)
-    grad_b1 = np.sum(G, axis=1, keepdims=True) / n  # (m, 1)
+    # gradients for layer 1
+    grad_W1 = (G @ X.T) / n + 2 * lam * W1
+    grad_b1 = np.sum(G, axis=1, keepdims=True) / n
 
     grads = {
         'W': [grad_W1, grad_W2],
         'b': [grad_b1, grad_b2]
     }
-
     return grads
 
 def ComputeLoss(P, y):
@@ -169,21 +141,30 @@ def ComputeLoss(P, y):
 
 def ComputeCost(P, y, network, lam):
     loss = ComputeLoss(P, y)
-    reg = lam * (np.sum(network['W'][0]**2) + np.sum(network['W'][1]**2))
+    reg  = lam * (np.sum(network['W'][0]**2) + np.sum(network['W'][1]**2))
     return loss + reg
 
+def CyclicLearningRate(t, eta_min, eta_max, n_s):
+    cycle = t // (2 * n_s)
+    pos   = t - 2 * cycle * n_s
+
+    if pos < n_s:
+        eta = eta_min + (pos / n_s) * (eta_max - eta_min)
+    else:
+        eta = eta_max - ((pos - n_s) / n_s) * (eta_max - eta_min)
+
+    return eta
+
 def MiniBatchGD(X, Y, y, X_val, Y_val, y_val, GDparams, network, lam):
-    n       = X.shape[1]
-    n_batch = GDparams['n_batch']
-    eta_min = GDparams['eta_min']
-    eta_max = GDparams['eta_max']
-    n_s     = GDparams['n_s']
+    n        = X.shape[1]
+    n_batch  = GDparams['n_batch']
+    eta_min  = GDparams['eta_min']
+    eta_max  = GDparams['eta_max']
+    n_s      = GDparams['n_s']
     n_cycles = GDparams['n_cycles']
 
-    total_steps = 2 * n_s * n_cycles   # total update steps
-    log_every   = total_steps // 10    # log 10 times per cycle... 
-    # actually log n_cycles * 10 times total
-    log_every   = 2 * n_s // 10       # log 10 times per cycle
+    total_steps = 2 * n_s * n_cycles
+    log_every   = max(1, 2 * n_s // 10)   # log 10 times per cycle
 
     history = {
         "train_loss": [], "val_loss": [],
@@ -195,8 +176,7 @@ def MiniBatchGD(X, Y, y, X_val, Y_val, y_val, GDparams, network, lam):
     t = 0  # global update step counter
 
     while t < total_steps:
-        # shuffle at the start of each pass through data
-        idx = np.random.permutation(n)
+        idx    = np.random.permutation(n)
         X_shuf = X[:, idx]
         Y_shuf = Y[:, idx]
         y_shuf = y[idx]
@@ -208,19 +188,14 @@ def MiniBatchGD(X, Y, y, X_val, Y_val, y_val, GDparams, network, lam):
             X_batch = X_shuf[:, j:j+n_batch]
             Y_batch = Y_shuf[:, j:j+n_batch]
 
-            # get current learning rate
-            eta = CyclicLearningRate(t, eta_min, eta_max, n_s)
-
-            # forward + backward
+            eta   = CyclicLearningRate(t, eta_min, eta_max, n_s)
             fp    = ApplyNetwork(X_batch, network)
             grads = BackwardPass(X_batch, Y_batch, fp, network, lam)
 
-            # update parameters
             for i in range(2):
                 network['W'][i] -= eta * grads['W'][i]
                 network['b'][i] -= eta * grads['b'][i]
 
-            # log periodically
             if t % log_every == 0:
                 fp_train = ApplyNetwork(X, network)
                 fp_val   = ApplyNetwork(X_val, network)
@@ -240,7 +215,7 @@ def MiniBatchGD(X, Y, y, X_val, Y_val, y_val, GDparams, network, lam):
                 history['val_acc'].append(val_acc)
                 history['steps'].append(t)
 
-                print(f"  step {t}/{total_steps} | "
+                print(f"  step {t:4d}/{total_steps} | "
                       f"loss: {train_loss:.4f}/{val_loss:.4f} | "
                       f"acc: {train_acc:.4f}/{val_acc:.4f} | "
                       f"eta: {eta:.6f}")
@@ -250,52 +225,30 @@ def MiniBatchGD(X, Y, y, X_val, Y_val, y_val, GDparams, network, lam):
     return network, history
 
 
-def CyclicLearningRate(t, eta_min, eta_max, n_s):
-    """
-    t       : current update step (starts at 0)
-    eta_min : minimum learning rate
-    eta_max : maximum learning rate
-    n_s     : stepsize (half cycle length)
-    """
-    cycle = t // (2 * n_s)        # which cycle are we in
-    pos   = t - 2 * cycle * n_s   # position within current cycle
-
-    if pos < n_s:
-        # going up
-        eta = eta_min + (pos / n_s) * (eta_max - eta_min)
-    else:
-        # going down
-        eta = eta_max - ((pos - n_s) / n_s) * (eta_max - eta_min)
-
-    return eta
-
-
 if __name__ == "__main__":
-    ROOT = Path(__file__).resolve().parent.parent
+    ROOT     = Path(__file__).resolve().parent.parent
     data_dir = ROOT / "Datasets" / "cifar-10-python" / "cifar-10-batches-py"
+    figures_dir = ROOT / "figures"
+    figures_dir.mkdir(exist_ok=True)
 
-    # load data
+    # --- Load and normalize training data ---
     trainX, trainY, trainy = LoadBatch(data_dir / "data_batch_1")
     mean_X = np.mean(trainX, axis=1, keepdims=True)
     std_X  = np.std(trainX,  axis=1, keepdims=True)
     trainX = NormalizeData(trainX, mean_X, std_X)
 
-    # small network and small data for the check
-    rng     = np.random.default_rng(42)
-    d_small = 5
-    n_small = 3
-    m       = 6
-    K       = 10
+    valX, valY, valy = LoadBatch(data_dir / "data_batch_2")
+    valX = NormalizeData(valX, mean_X, std_X)
 
+    # --- Gradient check ---
+    d_small, n_small, m, K = 5, 3, 6, 10
     small_net = InitNetwork(d_small, m, K, seed=42)
+    X_small   = trainX[0:d_small, 0:n_small]
+    Y_small   = trainY[:, 0:n_small]
+    y_small   = trainy[0:n_small]
 
-    X_small = trainX[0:d_small, 0:n_small]
-    Y_small = trainY[:, 0:n_small]
-    y_small = trainy[0:n_small]
-
-    # compare gradients lam=0
     from torch_gradient_computations import ComputeGradsWithTorch
-    fp      = ApplyNetwork(X_small, small_net)
+    fp          = ApplyNetwork(X_small, small_net)
     my_grads    = BackwardPass(X_small, Y_small, fp, small_net, lam=0.0)
     torch_grads = ComputeGradsWithTorch(X_small, y_small, small_net)
 
@@ -305,17 +258,41 @@ if __name__ == "__main__":
               f"rel={MaxRelativeError(my_grads['W'][i], torch_grads['W'][i]):.2e}")
         print(f"  Layer {i+1} b: abs={MaxAbsoluteError(my_grads['b'][i], torch_grads['b'][i]):.2e} "
               f"rel={MaxRelativeError(my_grads['b'][i], torch_grads['b'][i]):.2e}")
-    
+
+    # --- Overfit sanity check ---
     print("\n-- Overfit sanity check (100 examples, lam=0) --")
     X_overfit = trainX[:, 0:100]
     Y_overfit = trainY[:, 0:100]
     y_overfit = trainy[0:100]
 
     overfit_net    = InitNetwork(d=trainX.shape[0], m=50, K=10, seed=42)
-    overfit_params = {'n_batch': 10, 'eta': 0.01, 'n_epochs': 200}
-
+    overfit_params = {
+        'n_batch':  10,
+        'eta_min':  0.01,
+        'eta_max':  0.01,   # fixed LR (min == max)
+        'n_s':      500,
+        'n_cycles': 4
+    }
     overfit_net, _ = MiniBatchGD(
         X_overfit, Y_overfit, y_overfit,
-        X_overfit, Y_overfit, y_overfit,   # use same data for val
+        X_overfit, Y_overfit, y_overfit,
         overfit_params, overfit_net, lam=0.0
     )
+
+    # --- Exercise 3: 1 cycle, replicate Figure 3 ---
+    print("\n-- Exercise 3: 1 cycle (replicating Figure 3) --")
+    net_ex3    = InitNetwork(d=trainX.shape[0], m=50, K=10, seed=42)
+    params_ex3 = {
+        'n_batch':  100,
+        'eta_min':  1e-5,
+        'eta_max':  1e-1,
+        'n_s':      500,
+        'n_cycles': 1
+    }
+    net_ex3, hist_ex3 = MiniBatchGD(
+        trainX, trainY, trainy,
+        valX,   valY,   valy,
+        params_ex3, net_ex3, lam=0.01
+    )
+    PlotHistory(hist_ex3, title="Exercise 3: 1 cycle",
+                save_path=figures_dir / "ex3_one_cycle.png")
