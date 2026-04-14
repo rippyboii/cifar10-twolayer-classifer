@@ -223,6 +223,26 @@ def MiniBatchGD(X, Y, y, X_val, Y_val, y_val, GDparams, network, lam):
     return network, history
 
 
+def CyclicLearningRate(t, eta_min, eta_max, n_s):
+    """
+    t       : current update step (starts at 0)
+    eta_min : minimum learning rate
+    eta_max : maximum learning rate
+    n_s     : stepsize (half cycle length)
+    """
+    cycle = t // (2 * n_s)        # which cycle are we in
+    pos   = t - 2 * cycle * n_s   # position within current cycle
+
+    if pos < n_s:
+        # going up
+        eta = eta_min + (pos / n_s) * (eta_max - eta_min)
+    else:
+        # going down
+        eta = eta_max - ((pos - n_s) / n_s) * (eta_max - eta_min)
+
+    return eta
+
+
 if __name__ == "__main__":
     ROOT = Path(__file__).resolve().parent.parent
     data_dir = ROOT / "Datasets" / "cifar-10-python" / "cifar-10-batches-py"
