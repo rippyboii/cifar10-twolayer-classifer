@@ -395,37 +395,82 @@ if __name__ == "__main__":
     # --- Fine lambda search ---
     print("\n-- Fine lambda search --")
 
-    # zoom into the good region found in coarse search
-    fine_lam_values = [10 ** (-3.3 + (-2.15 - (-3.3)) * i / 7) for i in range(8)]
+    if not SKIP:
+        # zoom into the good region found in coarse search
+        fine_lam_values = [10 ** (-3.3 + (-2.15 - (-3.3)) * i / 7) for i in range(8)]
 
-    fine_params = {
+        fine_params = {
+            'n_batch':  100,
+            'eta_min':  1e-5,
+            'eta_max':  1e-1,
+            'n_s':      500,
+            'n_cycles': 2
+        }
+
+        fine_results = []
+
+        for lam in fine_lam_values:
+            print(f"\n  lam={lam:.2e}")
+            net = InitNetwork(d=d, m=50, K=10, seed=42)
+            net, hist = MiniBatchGD(
+                big_trainX, big_trainY, big_trainy,
+                big_valX,   big_valY,   big_valy,
+                fine_params, net, lam
+            )
+            best_val_acc  = max(hist['val_acc'])
+            final_val_acc = hist['val_acc'][-1]
+            print(f"  lam={lam:.2e} | best val acc: {best_val_acc*100:.2f}% | final: {final_val_acc*100:.2f}%")
+            fine_results.append((lam, best_val_acc, final_val_acc))
+
+        print("\n-- Fine search summary --")
+        for lam, best, final in fine_results:
+            print(f"  lam={lam:.2e} | best={best*100:.2f}% | final={final*100:.2f}%")
+
+        best_lam = max(fine_results, key=lambda x: x[1])[0]
+        print(f"\n  Best lam from fine search: {best_lam:.2e}")
+
+    # hardcoded the best lamda for now since we already ran the searches in previous tests
+    best_lam = 1.07e-03
+    print(f"\n  Using best lam from previous search: {best_lam:.2e}")
+
+    # renormalize test set with all-batch stats
+    testX_final = NormalizeData(testX, mean_all, std_all)
+
+    # --- Final training run with best lambda ---
+    print("\n-- Final training run (best lam=1.07e-03) --")
+
+    best_lam = 1.07e-03
+
+    # use all data except last 1000 for validation
+    final_trainX = all_X[:, :-1000]
+    final_trainY = all_Y[:, :-1000]
+    final_trainy = all_y[:-1000]
+    final_valX   = all_X[:, -1000:]
+    final_valY   = all_Y[:, -1000:]
+    final_valy   = all_y[-1000:]
+
+    n_final  = final_trainX.shape[1]
+    n_s_final = int(2 * np.floor(n_final / 100))  # rule of thumb
+
+    final_params = {
         'n_batch':  100,
         'eta_min':  1e-5,
         'eta_max':  1e-1,
-        'n_s':      500,
-        'n_cycles': 2
+        'n_s':      n_s_final,
+        'n_cycles': 3
     }
 
-    fine_results = []
+    final_net = InitNetwork(d=d, m=50, K=10, seed=42)
+    final_net, final_hist = MiniBatchGD(
+        final_trainX, final_trainY, final_trainy,
+        final_valX,   final_valY,   final_valy,
+        final_params, final_net, best_lam
+    )
 
-    for lam in fine_lam_values:
-        print(f"\n  lam={lam:.2e}")
-        net = InitNetwork(d=d, m=50, K=10, seed=42)
-        net, hist = MiniBatchGD(
-            big_trainX, big_trainY, big_trainy,
-            big_valX,   big_valY,   big_valy,
-            fine_params, net, lam
-        )
-        best_val_acc  = max(hist['val_acc'])
-        final_val_acc = hist['val_acc'][-1]
-        print(f"  lam={lam:.2e} | best val acc: {best_val_acc*100:.2f}% | final: {final_val_acc*100:.2f}%")
-        fine_results.append((lam, best_val_acc, final_val_acc))
+    # evaluate on test set
+    fp_final  = ApplyNetwork(testX_final, final_net)
+    final_test_acc = ComputeAccuracy(fp_final['P'], testy)
+    print(f"\n  Final test accuracy: {final_test_acc*100:.2f}%")
 
-    print("\n-- Fine search summary --")
-    for lam, best, final in fine_results:
-        print(f"  lam={lam:.2e} | best={best*100:.2f}% | final={final*100:.2f}%")
-
-    best_lam = max(fine_results, key=lambda x: x[1])[0]
-    print(f"\n  Best lam from fine search: {best_lam:.2e}")
-
-    
+    PlotHistory(final_hist, title=f"Final run: lam={best_lam:.2e}, 3 cycles",
+                save_path=figures_dir / "final_training.png")
