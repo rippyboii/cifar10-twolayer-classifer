@@ -116,7 +116,7 @@ def BackwardPass(X, Y, fp_data, network, lam):
     W1 = network['W'][0]
 
     # error at output layer
-    G = P - Y                                        # (K, n)
+    G = P - Y  # (K, n)
 
     # gradients for layer 2
     grad_W2 = (G @ h.T) / n + 2 * lam * W2
@@ -124,7 +124,7 @@ def BackwardPass(X, Y, fp_data, network, lam):
 
     # propagate back through W2 and ReLU
     G = W2.T @ G
-    G = G * (s1 > 0)                                 # ReLU gate
+    G = G * (s1 > 0)                                 
 
     # gradients for layer 1
     grad_W1 = (G @ X.T) / n + 2 * lam * W1
@@ -167,7 +167,7 @@ def MiniBatchGD(X, Y, y, X_val, Y_val, y_val, GDparams, network, lam):
     n_cycles = GDparams['n_cycles']
 
     total_steps = 2 * n_s * n_cycles
-    log_every   = max(1, 2 * n_s // 10)   # log 10 times per cycle
+    log_every   = max(1, 2 * n_s // 10)
 
     history = {
         "train_loss": [], "val_loss": [],
@@ -176,7 +176,7 @@ def MiniBatchGD(X, Y, y, X_val, Y_val, y_val, GDparams, network, lam):
         "steps":      []
     }
 
-    t = 0  # global update step counter
+    t = 0
 
     while t < total_steps:
         idx    = np.random.permutation(n)
@@ -293,7 +293,6 @@ if __name__ == "__main__":
             print(f"  Layer {i+1} b: abs={MaxAbsoluteError(my_grads['b'][i], torch_grads['b'][i]):.2e} "
                   f"rel={MaxRelativeError(my_grads['b'][i], torch_grads['b'][i]):.2e}")
 
-        # --- Overfit sanity check ---
         print("\n-- Overfit sanity check (100 examples, lam=0) --")
         X_overfit = trainX[:, 0:100]
         Y_overfit = trainY[:, 0:100]
@@ -303,7 +302,7 @@ if __name__ == "__main__":
         overfit_params = {
             'n_batch':  10,
             'eta_min':  0.01,
-            'eta_max':  0.01,   # fixed LR (min == max)
+            'eta_max':  0.01,
             'n_s':      500,
             'n_cycles': 4
         }
@@ -449,7 +448,7 @@ if __name__ == "__main__":
         final_valy   = all_y[-1000:]
 
         n_final  = final_trainX.shape[1]
-        n_s_final = int(2 * np.floor(n_final / 100))  # rule of thumb
+        n_s_final = int(2 * np.floor(n_final / 100))
 
         final_params = {
             'n_batch':  100,
