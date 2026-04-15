@@ -6,7 +6,7 @@ import torch
 from pathlib import Path
 
 # this will be used later to skip coarse lamda search
-SKIP = True # It's already run in prev tests
+SKIP = False # It's already run in prev tests
 
 
 def LoadBatch(filename):
@@ -243,91 +243,8 @@ if __name__ == "__main__":
     valX, valY, valy = LoadBatch(data_dir / "data_batch_2")
     valX = NormalizeData(valX, mean_X, std_X)
 
-    # --- Gradient check ---
-    d_small, n_small, m, K = 5, 3, 6, 10
-    small_net = InitNetwork(d_small, m, K, seed=42)
-    X_small   = trainX[0:d_small, 0:n_small]
-    Y_small   = trainY[:, 0:n_small]
-    y_small   = trainy[0:n_small]
-
-    from torch_gradient_computations import ComputeGradsWithTorch
-    fp          = ApplyNetwork(X_small, small_net)
-    my_grads    = BackwardPass(X_small, Y_small, fp, small_net, lam=0.0)
-    torch_grads = ComputeGradsWithTorch(X_small, y_small, small_net)
-
-    print("-- Gradient check (lam=0) --")
-    for i in range(2):
-        print(f"  Layer {i+1} W: abs={MaxAbsoluteError(my_grads['W'][i], torch_grads['W'][i]):.2e} "
-              f"rel={MaxRelativeError(my_grads['W'][i], torch_grads['W'][i]):.2e}")
-        print(f"  Layer {i+1} b: abs={MaxAbsoluteError(my_grads['b'][i], torch_grads['b'][i]):.2e} "
-              f"rel={MaxRelativeError(my_grads['b'][i], torch_grads['b'][i]):.2e}")
-
-    # --- Overfit sanity check ---
-    print("\n-- Overfit sanity check (100 examples, lam=0) --")
-    X_overfit = trainX[:, 0:100]
-    Y_overfit = trainY[:, 0:100]
-    y_overfit = trainy[0:100]
-
-    overfit_net    = InitNetwork(d=trainX.shape[0], m=50, K=10, seed=42)
-    overfit_params = {
-        'n_batch':  10,
-        'eta_min':  0.01,
-        'eta_max':  0.01,   # fixed LR (min == max)
-        'n_s':      500,
-        'n_cycles': 4
-    }
-    overfit_net, _ = MiniBatchGD(
-        X_overfit, Y_overfit, y_overfit,
-        X_overfit, Y_overfit, y_overfit,
-        overfit_params, overfit_net, lam=0.0
-    )
-
-    # --- Exercise 3: 1 cycle, replicate Figure 3 ---
-    print("\n-- Exercise 3: 1 cycle (replicating Figure 3) --")
-    net_ex3    = InitNetwork(d=trainX.shape[0], m=50, K=10, seed=42)
-    params_ex3 = {
-        'n_batch':  100,
-        'eta_min':  1e-5,
-        'eta_max':  1e-1,
-        'n_s':      500,
-        'n_cycles': 1
-    }
-    net_ex3, hist_ex3 = MiniBatchGD(
-        trainX, trainY, trainy,
-        valX,   valY,   valy,
-        params_ex3, net_ex3, lam=0.01
-    )
-    PlotHistory(hist_ex3, title="Exercise 3: 1 cycle",
-                save_path=figures_dir / "ex3_one_cycle.png")
-    
-    # --- Exercise 4: 3 cycles, replicate Figure 4 ---
-    print("\n-- Exercise 4: 3 cycles (replicating Figure 4) --")
-    net_ex4    = InitNetwork(d=trainX.shape[0], m=50, K=10, seed=42)
-    params_ex4 = {
-        'n_batch':  100,
-        'eta_min':  1e-5,
-        'eta_max':  1e-1,
-        'n_s':      800,
-        'n_cycles': 3
-    }
-    net_ex4, hist_ex4 = MiniBatchGD(
-        trainX, trainY, trainy,
-        valX,   valY,   valy,
-        params_ex4, net_ex4, lam=0.01
-    )
-
-    # evaluate on test set
     testX, testY, testy = LoadBatch(data_dir / "test_batch")
     testX = NormalizeData(testX, mean_X, std_X)
-    fp_test  = ApplyNetwork(testX, net_ex4)
-    test_acc = ComputeAccuracy(fp_test['P'], testy)
-    print(f"  Test accuracy after 3 cycles: {test_acc*100:.2f}%")
-
-    PlotHistory(hist_ex4, title="Exercise 4: 3 cycles",
-                save_path=figures_dir / "ex4_three_cycles.png")
-    
-    # --- Coarse lamda search ---   
-    print("\n-- Coarse lambda search --")
 
     # load all 5 batches
     all_X, all_Y, all_y = [], [], []
@@ -357,6 +274,89 @@ if __name__ == "__main__":
     n    = big_trainX.shape[1]
 
     if not SKIP:
+        # --- Gradient check ---
+        d_small, n_small, m, K = 5, 3, 6, 10
+        small_net = InitNetwork(d_small, m, K, seed=42)
+        X_small   = trainX[0:d_small, 0:n_small]
+        Y_small   = trainY[:, 0:n_small]
+        y_small   = trainy[0:n_small]
+
+        from torch_gradient_computations import ComputeGradsWithTorch
+        fp          = ApplyNetwork(X_small, small_net)
+        my_grads    = BackwardPass(X_small, Y_small, fp, small_net, lam=0.0)
+        torch_grads = ComputeGradsWithTorch(X_small, y_small, small_net)
+
+        print("-- Gradient check (lam=0) --")
+        for i in range(2):
+            print(f"  Layer {i+1} W: abs={MaxAbsoluteError(my_grads['W'][i], torch_grads['W'][i]):.2e} "
+                  f"rel={MaxRelativeError(my_grads['W'][i], torch_grads['W'][i]):.2e}")
+            print(f"  Layer {i+1} b: abs={MaxAbsoluteError(my_grads['b'][i], torch_grads['b'][i]):.2e} "
+                  f"rel={MaxRelativeError(my_grads['b'][i], torch_grads['b'][i]):.2e}")
+
+        # --- Overfit sanity check ---
+        print("\n-- Overfit sanity check (100 examples, lam=0) --")
+        X_overfit = trainX[:, 0:100]
+        Y_overfit = trainY[:, 0:100]
+        y_overfit = trainy[0:100]
+
+        overfit_net    = InitNetwork(d=trainX.shape[0], m=50, K=10, seed=42)
+        overfit_params = {
+            'n_batch':  10,
+            'eta_min':  0.01,
+            'eta_max':  0.01,   # fixed LR (min == max)
+            'n_s':      500,
+            'n_cycles': 4
+        }
+        overfit_net, _ = MiniBatchGD(
+            X_overfit, Y_overfit, y_overfit,
+            X_overfit, Y_overfit, y_overfit,
+            overfit_params, overfit_net, lam=0.0
+        )
+
+        # --- Exercise 3: 1 cycle, replicate Figure 3 ---
+        print("\n-- Exercise 3: 1 cycle (replicating Figure 3) --")
+        net_ex3    = InitNetwork(d=trainX.shape[0], m=50, K=10, seed=42)
+        params_ex3 = {
+            'n_batch':  100,
+            'eta_min':  1e-5,
+            'eta_max':  1e-1,
+            'n_s':      500,
+            'n_cycles': 1
+        }
+        net_ex3, hist_ex3 = MiniBatchGD(
+            trainX, trainY, trainy,
+            valX,   valY,   valy,
+            params_ex3, net_ex3, lam=0.01
+        )
+        PlotHistory(hist_ex3, title="Exercise 3: 1 cycle",
+                    save_path=figures_dir / "ex3_one_cycle.png")
+
+        # --- Exercise 4: 3 cycles, replicate Figure 4 ---
+        print("\n-- Exercise 4: 3 cycles (replicating Figure 4) --")
+        net_ex4    = InitNetwork(d=trainX.shape[0], m=50, K=10, seed=42)
+        params_ex4 = {
+            'n_batch':  100,
+            'eta_min':  1e-5,
+            'eta_max':  1e-1,
+            'n_s':      800,
+            'n_cycles': 3
+        }
+        net_ex4, hist_ex4 = MiniBatchGD(
+            trainX, trainY, trainy,
+            valX,   valY,   valy,
+            params_ex4, net_ex4, lam=0.01
+        )
+
+        # evaluate on test set
+        fp_test  = ApplyNetwork(testX, net_ex4)
+        test_acc = ComputeAccuracy(fp_test['P'], testy)
+        print(f"  Test accuracy after 3 cycles: {test_acc*100:.2f}%")
+
+        PlotHistory(hist_ex4, title="Exercise 4: 3 cycles",
+                    save_path=figures_dir / "ex4_three_cycles.png")
+
+        # --- Coarse lamda search ---
+        print("\n-- Coarse lambda search --")
 
         # 8 values evenly on log scale from 1e-5 to 1e-1
         l_min, l_max = -5, -1
@@ -392,10 +392,9 @@ if __name__ == "__main__":
         for lam, best, final in coarse_results:
             print(f"  lam={lam:.2e} | best={best*100:.2f}% | final={final*100:.2f}%")
 
-    # --- Fine lambda search ---
-    print("\n-- Fine lambda search --")
+        # --- Fine lambda search ---
+        print("\n-- Fine lambda search --")
 
-    if not SKIP:
         # zoom into the good region found in coarse search
         fine_lam_values = [10 ** (-3.3 + (-2.15 - (-3.3)) * i / 7) for i in range(8)]
 
@@ -429,48 +428,77 @@ if __name__ == "__main__":
         best_lam = max(fine_results, key=lambda x: x[1])[0]
         print(f"\n  Best lam from fine search: {best_lam:.2e}")
 
-    # hardcoded the best lamda for now since we already ran the searches in previous tests
-    best_lam = 1.07e-03
-    print(f"\n  Using best lam from previous search: {best_lam:.2e}")
+        # hardcoded the best lamda for now since we already ran the searches in previous tests
+        best_lam = 1.07e-03
+        print(f"\n  Using best lam from previous search: {best_lam:.2e}")
 
-    # renormalize test set with all-batch stats
-    testX_final = NormalizeData(testX, mean_all, std_all)
+        # renormalize test set with all-batch stats
+        testX_final = NormalizeData(testX, mean_all, std_all)
 
-    # --- Final training run with best lambda ---
-    print("\n-- Final training run (best lam=1.07e-03) --")
+        # --- Final training run with best lambda ---
+        print("\n-- Final training run (best lam=1.07e-03) --")
 
-    best_lam = 1.07e-03
+        best_lam = 1.07e-03
 
-    # use all data except last 1000 for validation
+        # use all data except last 1000 for validation
+        final_trainX = all_X[:, :-1000]
+        final_trainY = all_Y[:, :-1000]
+        final_trainy = all_y[:-1000]
+        final_valX   = all_X[:, -1000:]
+        final_valY   = all_Y[:, -1000:]
+        final_valy   = all_y[-1000:]
+
+        n_final  = final_trainX.shape[1]
+        n_s_final = int(2 * np.floor(n_final / 100))  # rule of thumb
+
+        final_params = {
+            'n_batch':  100,
+            'eta_min':  1e-5,
+            'eta_max':  1e-1,
+            'n_s':      n_s_final,
+            'n_cycles': 3
+        }
+
+        final_net = InitNetwork(d=d, m=50, K=10, seed=42)
+        final_net, final_hist = MiniBatchGD(
+            final_trainX, final_trainY, final_trainy,
+            final_valX,   final_valY,   final_valy,
+            final_params, final_net, best_lam
+        )
+
+        # evaluate on test set
+        fp_final  = ApplyNetwork(testX_final, final_net)
+        final_test_acc = ComputeAccuracy(fp_final['P'], testy)
+        print(f"\n  Final test accuracy: {final_test_acc*100:.2f}%")
+
+        PlotHistory(final_hist, title=f"Final run: lam={best_lam:.2e}, 3 cycles",
+                    save_path=figures_dir / "final_training.png")
+
+    print("\n-- Retrain with best coarse lam=1.93e-03 --")
+    best_lam = 1.93e-03
     final_trainX = all_X[:, :-1000]
     final_trainY = all_Y[:, :-1000]
     final_trainy = all_y[:-1000]
     final_valX   = all_X[:, -1000:]
     final_valY   = all_Y[:, -1000:]
     final_valy   = all_y[-1000:]
-
-    n_final  = final_trainX.shape[1]
-    n_s_final = int(2 * np.floor(n_final / 100))  # rule of thumb
-
-    final_params = {
+    testX_final  = NormalizeData(testX, mean_all, std_all)
+    n_final      = final_trainX.shape[1]
+    n_s_final    = int(2 * np.floor(n_final / 100))
+    final_params2 = {
         'n_batch':  100,
         'eta_min':  1e-5,
         'eta_max':  1e-1,
         'n_s':      n_s_final,
         'n_cycles': 3
     }
-
-    final_net = InitNetwork(d=d, m=50, K=10, seed=42)
-    final_net, final_hist = MiniBatchGD(
+    final_net2 = InitNetwork(d=d, m=50, K=10, seed=42)
+    final_net2, final_hist2 = MiniBatchGD(
         final_trainX, final_trainY, final_trainy,
         final_valX,   final_valY,   final_valy,
-        final_params, final_net, best_lam
+        final_params2, final_net2, best_lam
     )
-
-    # evaluate on test set
-    fp_final  = ApplyNetwork(testX_final, final_net)
-    final_test_acc = ComputeAccuracy(fp_final['P'], testy)
-    print(f"\n  Final test accuracy: {final_test_acc*100:.2f}%")
-
-    PlotHistory(final_hist, title=f"Final run: lam={best_lam:.2e}, 3 cycles",
-                save_path=figures_dir / "final_training.png")
+    fp_final2 = ApplyNetwork(testX_final, final_net2)
+    print(f"\n  Final test accuracy (lam=1.93e-03): {ComputeAccuracy(fp_final2['P'], testy)*100:.2f}%")
+    PlotHistory(final_hist2, title=f"Final run: lam={best_lam:.2e}, 3 cycles",
+                save_path=figures_dir / 'final_training_v2.png')
