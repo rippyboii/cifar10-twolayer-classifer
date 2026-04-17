@@ -97,14 +97,18 @@ def InitNetwork(d, m, K, seed=42):
 
     return network
 
-def ApplyNetwork(X, network):
+def ApplyNetwork(X, network, drop_prob=0.0, rng_aug=None, training=False):
     W1, b1 = network['W'][0], network['b'][0]
     W2, b2 = network['W'][1], network['b'][1]
 
-    s1 = W1 @ X + b1          # (m, n)
+    s1 = W1 @ X + b1
     h  = np.maximum(0, s1)    # ReLU
-    s  = W2 @ h + b2          # (K, n)
-    P  = softmax(s)            # (K, n)
+
+    if drop_prob > 0.0:
+        h = Dropout(h, drop_prob, rng_aug, training=training)
+
+    s  = W2 @ h + b2
+    P  = softmax(s)
 
     fp_data = {'s1': s1, 'h': h, 's': s, 'P': P}
     return fp_data
@@ -160,6 +164,12 @@ def CyclicLearningRate(t, eta_min, eta_max, n_s):
 
     return eta
 
+def Dropout(h, drop_prob, rng_aug, training=True):
+    if not training:
+        return h * (1 - drop_prob)
+    mask = (rng_aug.random(h.shape) > drop_prob).astype(h.dtype)
+    return h * mask
+
 def GetFlipIndices():
     aa = np.int32(np.arange(32)).reshape((32, 1))
     bb = np.int32(np.arange(31, -1, -1)).reshape((32, 1))
@@ -206,7 +216,7 @@ def PrecomputeTranslations():
     return trans
 
 def MiniBatchGD(X, Y, y, X_val, Y_val, y_val, GDparams, network, lam,
-                inds_flip=None, trans_dict=None, rng_aug=None):
+                inds_flip=None, trans_dict=None, rng_aug=None, drop_prob=0.0):
     n        = X.shape[1]
     n_batch  = GDparams['n_batch']
     eta_min  = GDparams['eta_min']
@@ -255,7 +265,10 @@ def MiniBatchGD(X, Y, y, X_val, Y_val, y_val, GDparams, network, lam,
                         X_batch[:, img_idx] = xx_shifted
 
             eta   = CyclicLearningRate(t, eta_min, eta_max, n_s)
-            fp    = ApplyNetwork(X_batch, network)
+            fp    = ApplyNetwork(X_batch, network,
+                                 drop_prob=drop_prob,
+                                 rng_aug=rng_aug,
+                                 training=True)
             grads = BackwardPass(X_batch, Y_batch, fp, network, lam)
 
             for i in range(2):
@@ -565,7 +578,8 @@ if __name__ == "__main__":
         final_params2, final_net2, best_lam,
         inds_flip=inds_flip,
         trans_dict=trans_dict,
-        rng_aug=rng_aug
+        rng_aug=rng_aug,
+        drop_prob=0.3
     )
     fp_final2 = ApplyNetwork(testX_final, final_net2)
     print(f"\n  Final test accuracy (lam=1.93e-03): {ComputeAccuracy(fp_final2['P'], testy)*100:.2f}%")
