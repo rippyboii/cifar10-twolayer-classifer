@@ -160,7 +160,53 @@ def CyclicLearningRate(t, eta_min, eta_max, n_s):
 
     return eta
 
-def MiniBatchGD(X, Y, y, X_val, Y_val, y_val, GDparams, network, lam):
+def GetFlipIndices():
+    aa = np.int32(np.arange(32)).reshape((32, 1))
+    bb = np.int32(np.arange(31, -1, -1)).reshape((32, 1))
+    vv = np.tile(32 * aa, (1, 32))
+    ind_flip = vv.reshape((32 * 32, 1)) + np.tile(bb, (32, 1))
+    inds_flip = np.vstack((ind_flip, 1024 + ind_flip))
+    inds_flip = np.vstack((inds_flip, 2048 + ind_flip)).squeeze()
+    return inds_flip
+
+def PrecomputeTranslations():
+    trans = {}
+    for tx in range(-3, 4):
+        for ty in range(-3, 4):
+            if tx == 0 and ty == 0:
+                continue
+            try:
+                aa = np.arange(32).reshape((32, 1))
+                vv = np.tile(32 * aa, (1, 32 - abs(tx)))
+                bb1 = np.arange(max(tx, 0), 32 - max(-tx, 0)).reshape((32 - abs(tx), 1))
+                bb2 = np.arange(max(-tx, 0), 32 - max(tx, 0)).reshape((32 - abs(tx), 1))
+
+                ind_fill = vv.reshape((32 * (32 - abs(tx)), 1)) + np.tile(bb1, (32, 1))
+                ind_xx   = vv.reshape((32 * (32 - abs(tx)), 1)) + np.tile(bb2, (32, 1))
+
+                if ty > 0:
+                    ii = np.nonzero(ind_fill.squeeze() > ty * 32 + 1)[0]
+                    ind_fill = ind_fill[ii[0]:]
+                    ii = np.nonzero(ind_xx.squeeze() < 1024 - ty * 32)[0]
+                    ind_xx = ind_xx[:ii[-1] + 1]
+                elif ty < 0:
+                    ii = np.nonzero(ind_fill.squeeze() < 1024 + ty * 32 - 1)[0]
+                    ind_fill = ind_fill[:ii[-1] + 1]
+                    ii = np.nonzero(ind_xx.squeeze() > -ty * 32)[0]
+                    ind_xx = ind_xx[ii[0]:]
+
+                inds_fill = np.concatenate([ind_fill, 1024 + ind_fill, 2048 + ind_fill]).squeeze()
+                inds_xx   = np.concatenate([ind_xx,   1024 + ind_xx,   2048 + ind_xx]).squeeze()
+
+                if len(inds_fill) == len(inds_xx):
+                    trans[(tx, ty)] = (inds_fill, inds_xx)
+            except Exception:
+                pass
+    print(f"  Precomputed {len(trans)} translation pairs")
+    return trans
+
+def MiniBatchGD(X, Y, y, X_val, Y_val, y_val, GDparams, network, lam,
+                inds_flip=None, trans_dict=None, rng_aug=None):
     n        = X.shape[1]
     n_batch  = GDparams['n_batch']
     eta_min  = GDparams['eta_min']
@@ -190,8 +236,23 @@ def MiniBatchGD(X, Y, y, X_val, Y_val, y_val, GDparams, network, lam):
             if t >= total_steps:
                 break
 
-            X_batch = X_shuf[:, j:j+n_batch]
+            X_batch = X_shuf[:, j:j+n_batch].copy()
             Y_batch = Y_shuf[:, j:j+n_batch]
+
+            if inds_flip is not None and rng_aug is not None:
+                flip_mask = rng_aug.random(X_batch.shape[1]) < 0.5
+                flipped = X_batch[inds_flip, :]
+                X_batch[:, flip_mask] = flipped[:, flip_mask]
+
+            if trans_dict is not None and rng_aug is not None:
+                keys = list(trans_dict.keys())
+                for img_idx in range(X_batch.shape[1]):
+                    if rng_aug.random() < 0.5:
+                        k = keys[rng_aug.integers(len(keys))]
+                        inds_fill, inds_xx = trans_dict[k]
+                        xx_shifted = X_batch[:, img_idx].copy()
+                        xx_shifted[inds_fill] = X_batch[inds_xx, img_idx]
+                        X_batch[:, img_idx] = xx_shifted
 
             eta   = CyclicLearningRate(t, eta_min, eta_max, n_s)
             fp    = ApplyNetwork(X_batch, network)
@@ -493,11 +554,18 @@ if __name__ == "__main__":
         'n_s':      n_s_final,
         'n_cycles': 3
     }
+    inds_flip  = GetFlipIndices()
+    trans_dict = PrecomputeTranslations()
+    rng_aug    = np.random.default_rng(42)
+
     final_net2 = InitNetwork(d=d, m=256, K=10, seed=42)
     final_net2, final_hist2 = MiniBatchGD(
         final_trainX, final_trainY, final_trainy,
         final_valX,   final_valY,   final_valy,
-        final_params2, final_net2, best_lam
+        final_params2, final_net2, best_lam,
+        inds_flip=inds_flip,
+        trans_dict=trans_dict,
+        rng_aug=rng_aug
     )
     fp_final2 = ApplyNetwork(testX_final, final_net2)
     print(f"\n  Final test accuracy (lam=1.93e-03): {ComputeAccuracy(fp_final2['P'], testy)*100:.2f}%")
