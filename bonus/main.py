@@ -1,4 +1,6 @@
 import os
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 import pickle
 import numpy as np
 import matplotlib.pyplot as plt
@@ -491,7 +493,7 @@ if __name__ == "__main__":
         'n_s':      n_s_final,
         'n_cycles': 3
     }
-    final_net2 = InitNetwork(d=d, m=50, K=10, seed=42)
+    final_net2 = InitNetwork(d=d, m=256, K=10, seed=42)
     final_net2, final_hist2 = MiniBatchGD(
         final_trainX, final_trainY, final_trainy,
         final_valX,   final_valY,   final_valy,
