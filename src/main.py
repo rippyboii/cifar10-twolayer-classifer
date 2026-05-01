@@ -432,7 +432,8 @@ if __name__ == "__main__":
         print(f"\n  Using best lam from previous search: {best_lam:.2e}")
 
         # renormalize test set with all-batch stats
-        testX_final = NormalizeData(testX, mean_all, std_all)
+        raw_testX, _, _ = LoadBatch(data_dir / "test_batch")
+        testX_final = NormalizeData(raw_testX, mean_all, std_all)
 
         # --- Final training run with best lambda ---
         print("\n-- Final training run (best lam=1.07e-03) --")
@@ -481,7 +482,8 @@ if __name__ == "__main__":
     final_valX   = all_X[:, -1000:]
     final_valY   = all_Y[:, -1000:]
     final_valy   = all_y[-1000:]
-    testX_final  = NormalizeData(testX, mean_all, std_all)
+    raw_testX, _, _ = LoadBatch(data_dir / "test_batch")
+    testX_final  = NormalizeData(raw_testX, mean_all, std_all)
     n_final      = final_trainX.shape[1]
     n_s_final    = int(2 * np.floor(n_final / 100))
     final_params2 = {
