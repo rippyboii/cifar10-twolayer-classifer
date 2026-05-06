@@ -508,7 +508,8 @@ if __name__ == "__main__":
         print(f"\n  Using best lam from previous search: {best_lam:.2e}")
 
         # renormalize test set with all-batch stats
-        testX_final = NormalizeData(testX, mean_all, std_all)
+        raw_testX, _, _ = LoadBatch(data_dir / "test_batch")
+        testX_final = NormalizeData(raw_testX, mean_all, std_all)
 
         # --- Final training run with best lambda ---
         print("\n-- Final training run (best lam=1.07e-03) --")
@@ -549,7 +550,7 @@ if __name__ == "__main__":
         PlotHistory(final_hist, title=f"Final run: lam={best_lam:.2e}, 3 cycles",
                     save_path=figures_dir / "final_training.png")
 
-    print("\n-- Retrain with best coarse lam=1.93e-03 --")
+    print("\n-- Bonus: incremental improvements (lam=1.93e-03, 3 cycles) --")
     best_lam = 1.93e-03
     final_trainX = all_X[:, :-1000]
     final_trainY = all_Y[:, :-1000]
@@ -557,10 +558,11 @@ if __name__ == "__main__":
     final_valX   = all_X[:, -1000:]
     final_valY   = all_Y[:, -1000:]
     final_valy   = all_y[-1000:]
-    testX_final  = NormalizeData(testX, mean_all, std_all)
+    raw_testX, _, _ = LoadBatch(data_dir / "test_batch")
+    testX_final  = NormalizeData(raw_testX, mean_all, std_all)
     n_final      = final_trainX.shape[1]
     n_s_final    = int(2 * np.floor(n_final / 100))
-    final_params2 = {
+    bonus_params = {
         'n_batch':  100,
         'eta_min':  1e-5,
         'eta_max':  1e-1,
@@ -571,17 +573,63 @@ if __name__ == "__main__":
     trans_dict = PrecomputeTranslations()
     rng_aug    = np.random.default_rng(42)
 
-    final_net2 = InitNetwork(d=d, m=256, K=10, seed=42)
-    final_net2, final_hist2 = MiniBatchGD(
+    # Step 1: m=256 only (no augmentation, no dropout)
+    print("\n  [Bonus step 1] m=256, no augmentation, no dropout")
+    net_b1 = InitNetwork(d=d, m=256, K=10, seed=42)
+    net_b1, hist_b1 = MiniBatchGD(
         final_trainX, final_trainY, final_trainy,
         final_valX,   final_valY,   final_valy,
-        final_params2, final_net2, best_lam,
+        bonus_params, net_b1, best_lam
+    )
+    fp_b1 = ApplyNetwork(testX_final, net_b1)
+    print(f"  Test accuracy: {ComputeAccuracy(fp_b1['P'], testy)*100:.2f}%")
+    PlotHistory(hist_b1, title="Bonus step 1: m=256",
+                save_path=figures_dir / 'bonus_step1_m256.png')
+
+    # Step 2: m=256 + horizontal flip
+    print("\n  [Bonus step 2] m=256 + flip")
+    net_b2 = InitNetwork(d=d, m=256, K=10, seed=42)
+    net_b2, hist_b2 = MiniBatchGD(
+        final_trainX, final_trainY, final_trainy,
+        final_valX,   final_valY,   final_valy,
+        bonus_params, net_b2, best_lam,
+        inds_flip=inds_flip,
+        rng_aug=np.random.default_rng(42)
+    )
+    fp_b2 = ApplyNetwork(testX_final, net_b2)
+    print(f"  Test accuracy: {ComputeAccuracy(fp_b2['P'], testy)*100:.2f}%")
+    PlotHistory(hist_b2, title="Bonus step 2: m=256 + flip",
+                save_path=figures_dir / 'bonus_step2_m256_flip.png')
+
+    # Step 3: m=256 + flip + translation
+    print("\n  [Bonus step 3] m=256 + flip + translation")
+    net_b3 = InitNetwork(d=d, m=256, K=10, seed=42)
+    net_b3, hist_b3 = MiniBatchGD(
+        final_trainX, final_trainY, final_trainy,
+        final_valX,   final_valY,   final_valy,
+        bonus_params, net_b3, best_lam,
+        inds_flip=inds_flip,
+        trans_dict=trans_dict,
+        rng_aug=np.random.default_rng(42)
+    )
+    fp_b3 = ApplyNetwork(testX_final, net_b3)
+    print(f"  Test accuracy: {ComputeAccuracy(fp_b3['P'], testy)*100:.2f}%")
+    PlotHistory(hist_b3, title="Bonus step 3: m=256 + flip + translation",
+                save_path=figures_dir / 'bonus_step3_m256_flip_trans.png')
+
+    # Step 4: m=256 + flip + translation + dropout=0.3
+    print("\n  [Bonus step 4] m=256 + flip + translation + dropout=0.3")
+    net_b4 = InitNetwork(d=d, m=256, K=10, seed=42)
+    net_b4, hist_b4 = MiniBatchGD(
+        final_trainX, final_trainY, final_trainy,
+        final_valX,   final_valY,   final_valy,
+        bonus_params, net_b4, best_lam,
         inds_flip=inds_flip,
         trans_dict=trans_dict,
         rng_aug=rng_aug,
         drop_prob=0.3
     )
-    fp_final2 = ApplyNetwork(testX_final, final_net2)
-    print(f"\n  Final test accuracy (lam=1.93e-03): {ComputeAccuracy(fp_final2['P'], testy)*100:.2f}%")
-    PlotHistory(final_hist2, title=f"Final run: lam={best_lam:.2e}, 3 cycles",
-                save_path=figures_dir / 'final_training_v2.png')
+    fp_b4 = ApplyNetwork(testX_final, net_b4)
+    print(f"  Test accuracy: {ComputeAccuracy(fp_b4['P'], testy)*100:.2f}%")
+    PlotHistory(hist_b4, title="Bonus step 4: m=256 + flip + translation + dropout=0.3",
+                save_path=figures_dir / 'bonus_step4_all.png')
